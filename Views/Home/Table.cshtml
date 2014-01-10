@@ -1,0 +1,21 @@
+﻿@using dbshub.Models
+@{
+    ViewBag.Title = "表设计";
+}
+
+@hp.Table(
+    "t1",
+    new MongoDB.Bson.BsonDocument[]{},
+    new TableSchema{
+        Fields = new []{
+            new FieldSchema{ Caption="字段名", Name = "Name"},
+            new FieldSchema{ Caption="字段中文名", Name = "Caption"}
+        }
+    },
+    false, 
+    null
+)
+
+<script>
+    $("#t1").Table();
+</script>

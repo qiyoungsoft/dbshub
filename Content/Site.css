@@ -8,8 +8,8 @@ header, .header{ padding:2px 6px; background:#eee; border-bottom:1px solid #ddd}
 -----------------------------------------------------------*/
 .t-grid.Grid .editor { border: 0px }
 .t-grid.Grid tr.sel .editor { border: 1px }
-.t-grid.Grid tr.tmpl .editor { border: 1px rgb(106, 196,255) solid}
-.t-grid.Grid tr.sel  {  background: rgb(106, 196,255) }
+.t-grid.Grid tr.tmpl .editor { border: 1px rgb(190, 228,251) solid}
+.t-grid.Grid tr.sel  {  background: rgb(190, 228,251) }
 
 /* Styles for basic forms
 -----------------------------------------------------------*/

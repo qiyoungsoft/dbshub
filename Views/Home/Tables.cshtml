@@ -1,0 +1,25 @@
+﻿@using dbshub.Models
+@{
+    ViewBag.Title = "表设计";
+}
+
+<form method="post" action="/home/tables">
+    <div style="text-align:right"><input type="submit" value="保存"></div>
+    <hr />
+    @hp.Table(
+        "t1",
+        new MongoDB.Bson.BsonDocument[]{},
+        new TableSchema{
+            Fields = new []{
+                new FieldSchema{ Caption="表名", Name = "Name"},
+                new FieldSchema{ Caption="字中文名", Name = "Caption"}
+            }
+        },
+        false, 
+        null
+    )
+</form>
+
+<script>
+    $("#t1").Table();
+</script>
