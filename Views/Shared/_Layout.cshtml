@@ -1,38 +1,40 @@
-﻿<!DOCTYPE html>
-<html lang="zh">
+﻿@{
+    var db = l.core.MongoDBHelper.GetMongoDB();
+    var account = dbshub.Models.SiteAccount.Get(Html.ViewContext.HttpContext, db);
+}
+<!DOCTYPE html>
+<html>
 <head>
-<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
     <meta charset="utf-8" />
-    <title>@ViewBag.Title - 我的 ASP.NET MVC 应用程序</title>
-    <link href="~/favicon.ico" rel="shortcut icon" type="image/x-icon" />
     <meta name="viewport" content="width=device-width" />
+    <title>@ViewBag.Title</title>
+    <script src="@Url.Content("~/Scripts/jquery-ui-1.10.3/js/jquery-1.9.1.js")" type="text/javascript"></script>
+    <script src="@Url.Content("~/Scripts/jquery-ui-1.10.3/js/jquery-ui-1.10.3.custom.min.js")" type="text/javascript"></script>
+    <link href="@Url.Content("~/Scripts/jquery-ui-1.10.3/css/redmond/jquery-ui-1.10.3.custom.min.css")" rel="stylesheet" type="text/css" />
+
+    <script src="@Url.Content("~/Scripts/dbshub.js")" type="text/javascript"></script>
+
+    <script src="@Url.Content("~/Scripts/underscore-min.js")" type="text/javascript"></script>
+    <script src="@Url.Content("~/Scripts/jquery.tmpl.min.js")" type="text/javascript"></script>
+        <link href="@Url.Content("~/content/telerik.vista.min.css")" rel="stylesheet" type="text/css" />
+    <link href="@Url.Content("~/content/telerik.common.min.css")" rel="stylesheet" type="text/css" />
+    <link href="@Url.Content("~/content/styles.css")" rel="stylesheet" type="text/css" />
+
     @Styles.Render("~/Content/css")
     @Scripts.Render("~/bundles/modernizr")
-    @Styles.Render("~/Content/themes/base/css")
 </head>
 <body>
-    <div id="userSettings">
-        @Html.Partial("_UserSettings")
-    </div>
+    <div class="header">
+        <a href="#">东郭</a>
+        <a href="#">设计</a>
 
-    <div id="body">
+        <span style="float:right">欢迎, @(account.UserName??account.UserNO) </span>
+        <div style="clear:both"></div>
+    </div>
+    <div class="pageBody">
         @RenderBody()
     </div>
-
-    <footer>
-        <nav>
-            <ul id="menu">
-                <li>@Html.ActionLink("任务列表", "Index", "Home", new { area = "" }, null)</li>
-                <li>@Html.ActionLink("API", "Index", "Help", new { area = "HelpPage" }, null)</li>
-            </ul>
-        </nav> 
-        <p>了解有关<a href="http://go.microsoft.com/fwlink/?LinkId=273732">单页应用程序</a>的详细信息</p>
-        <p>&copy; @DateTime.Now.Year - 我的 ASP.NET MVC 应用程序</p>
-    </footer>
-
     @Scripts.Render("~/bundles/jquery")
-    @Scripts.Render("~/bundles/jqueryui")
-    @Scripts.Render("~/bundles/ajaxlogin")
     @RenderSection("scripts", required: false)
 </body>
 </html>

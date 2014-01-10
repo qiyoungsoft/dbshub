@@ -1,422 +1,155 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Transactions;
+using System.Web;
+using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 using System.Web.Mvc;
-using System.Web.Security;
-using DotNetOpenAuth.AspNet;
-using Microsoft.Web.WebPages.OAuth;
-using WebMatrix.WebData;
-using dbshub.Filters;
+using MongoDB.Bson;
+using MongoDB.Driver;
+using MongoDB.Driver.Builders;
+using System.Net.Mail;
+using System.Text;
+using System.Net;
 using dbshub.Models;
+using dbshub;
 
 namespace dbshub.Controllers
 {
-    [Authorize]
-    [InitializeSimpleMembership]
-    public class AccountController : Controller
+    public class LoginUser :IValidatableObject {
+        [Required(ErrorMessage="请输入用户名")]
+        public string UserNO { get; set; }
+        
+        public string Password { get; set; }
+        public bool admin;
+
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)  {
+            string p = l.core.Crypt.Encode(UserNO.ToLower() + Password);
+            var db = l.core.MongoDBHelper.GetMongoDB();
+            var accounts = db.GetCollection<Account>("Account");
+            Account acc = accounts.FindOneAs<Account>(Query.EQ("_userno", UserNO.ToLower()));
+            
+            if ((acc != null) && (acc.Password == p || (acc.Password??"") ==  (Password??""))) {
+                admin = acc.Admin;// !string.IsNullOrEmpty(acc.Admin);
+            }
+            else {
+                yield return new ValidationResult("密码不对或用户不存在", new[] {   "Password" });
+            }
+              
+        }
+    }
+
+
+    public class ChgPassUser : IValidatableObject
     {
-        //
-        // POST: /Account/JsonLogin
+        public string UserNO { get; set; }
+        public string OldPass { get; set; }
+        [ DisplayName("新密码"), Required]
+        public string NewPass { get; set; }
 
-        [AllowAnonymous]
-        [HttpPost]
-        public JsonResult JsonLogin(LoginModel model, string returnUrl)
-        {
-            if (ModelState.IsValid)
-            {
-                if (WebSecurity.Login(model.UserName, model.Password, persistCookie: model.RememberMe))
-                {
-                    FormsAuthentication.SetAuthCookie(model.UserName, model.RememberMe);
-                    return Json(new { success = true, redirect = returnUrl });
+        public string NewPass1 { get; set; }
+        public string Password { get; set; }
+
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext) {
+            if (NewPass1 != NewPass)
+                yield return new ValidationResult("新旧密码不一致", new[] { "NewPass" });
+            else {
+                var db = l.core.MongoDBHelper.GetMongoDB();
+                var account = db.GetCollection<Account>("Account");
+                var acc = account.FindOne(Query.EQ("UserNO", UserNO));
+                Password = l.core.Crypt.Encode(UserNO.ToLower() + OldPass);
+                if ((acc != null) && (acc.Password == Password || (acc.Password ?? "") == (OldPass ?? ""))) {
+                    Password = l.core.Crypt.Encode(UserNO.ToLower() + NewPass);
                 }
-                else
-                {
-                    ModelState.AddModelError("", "提供的用户名或密码不正确。");
-                }
+                else yield return new ValidationResult("旧密码不对", new[] { "OldPass" });
             }
 
-            // 如果我们进行到这一步，则表示某个地方出错
-            return Json(new { errors = GetErrorsFromModelState() });
+        }
+    }
+    public class AccountController : Controller  {
+        static Dictionary<string, string> ErrorMsg = new Dictionary<string, string> { 
+                {"login", "登录过期或者未登录"},
+                {"power", "您没有权限访问这个页面"}
+            };
+
+        public ActionResult Signin(string id) {
+            return View(new LoginUser() { UserNO ="admin"  });
         }
 
-        //
-        // POST: /Account/LogOff
-
-        [HttpPost]
-        [ValidateAntiForgeryToken]
-        public ActionResult LogOff()
+        public ActionResult Register()
         {
-            WebSecurity.Logout();
-
-            return RedirectToAction("Index", "Home");
+ 
+            return View(new Account());
         }
 
-        //
-        // POST: /Account/JsonRegister
         [HttpPost]
-        [AllowAnonymous]
-        [ValidateAntiForgeryToken]
-        public ActionResult JsonRegister(RegisterModel model, string returnUrl)
+        public ActionResult Register(Account account)
         {
-            if (ModelState.IsValid)
-            {
-                // 尝试注册用户
-                try
-                {
-                    WebSecurity.CreateUserAndAccount(model.UserName, model.Password);
-                    WebSecurity.Login(model.UserName, model.Password);
+            if (ModelState.IsValid) {
+                var db = l.core.MongoDBHelper.GetMongoDB();
+                var accounts = db.GetCollection("Account");
+                account._userno = account.UserNO.ToLower();
+                account._id = new ObjectId();
+                account.Password = l.core.Crypt.Encode(account._userno + account.Password);
+                account.From = Request.UserHostAddress;
+                accounts.Save(account);
 
-                    InitiateDatabaseForNewUser(model.UserName);
-
-                    FormsAuthentication.SetAuthCookie(model.UserName, createPersistentCookie: false);
-                    return Json(new { success = true, redirect = returnUrl });
-                }
-                catch (MembershipCreateUserException e)
-                {
-                    ModelState.AddModelError("", ErrorCodeToString(e.StatusCode));
-                }
+                Flash.Message("感谢您的注册，我们已经给您的账户邮箱发送了一封电子邮件，请牢记您的密码并请登录");
+                return RedirectToAction("Signin");
             }
-
-            // 如果我们进行到这一步，则表示某个地方出错
-            return Json(new { errors = GetErrorsFromModelState() });
+            return View(account);
         }
-
-        /// <summary>
-        /// 为新用户启动新的任务列表
-        /// </summary>
-        /// <param name="userName"></param>
-        private static void InitiateDatabaseForNewUser(string userName)
-        {
-            TodoItemContext db = new TodoItemContext();
-            TodoList todoList = new TodoList();
-            todoList.UserId = userName;
-            todoList.Title = "我的任务列表 #1";
-            todoList.Todos = new List<TodoItem>();
-            db.TodoLists.Add(todoList);
-            db.SaveChanges();
-
-            todoList.Todos.Add(new TodoItem() { Title = "任务项 #1", TodoListId = todoList.TodoListId, IsDone = false });
-            todoList.Todos.Add(new TodoItem() { Title = "任务项 #2", TodoListId = todoList.TodoListId, IsDone = false });
-            db.SaveChanges();
-        }
-
-        //
-        // POST: /Account/Disassociate
 
         [HttpPost]
-        [ValidateAntiForgeryToken]
-        public ActionResult Disassociate(string provider, string providerUserId)
-        {
-            string ownerAccount = OAuthWebSecurity.GetUserName(provider, providerUserId);
-            ManageMessageId? message = null;
-
-            // 只有在当前登录用户是所有者时才取消关联帐户
-            if (ownerAccount == User.Identity.Name)
-            {
-                // 使用事务来防止用户删除其上次使用的登录凭据
-                using (var scope = new TransactionScope(TransactionScopeOption.Required, new TransactionOptions { IsolationLevel = IsolationLevel.Serializable }))
-                {
-                    bool hasLocalAccount = OAuthWebSecurity.HasLocalAccount(WebSecurity.GetUserId(User.Identity.Name));
-                    if (hasLocalAccount || OAuthWebSecurity.GetAccountsFromUserName(User.Identity.Name).Count > 1)
-                    {
-                        OAuthWebSecurity.DeleteAccount(provider, providerUserId);
-                        scope.Complete();
-                        message = ManageMessageId.RemoveLoginSuccess;
-                    }
-                }
+        public ActionResult Signin(LoginUser account)  {
+            var db = l.core.MongoDBHelper.GetMongoDB();
+            if (ModelState.IsValid) {
+                Session["UserNO"] = account.UserNO;
+                if (account.admin) Session["Admin"] = true;
+                return Redirect(Request.QueryString["rel"]??"/");
             }
-
-            return RedirectToAction("Manage", new { Message = message });
+            Session.Remove("UserNO");
+            Session.Remove("Admin");
+            return View(account);
         }
 
-        //
-        // GET: /Account/Manage
-
-        public ActionResult Manage(ManageMessageId? message)
+        public ActionResult Signout(object model)
         {
-            ViewBag.StatusMessage =
-                message == ManageMessageId.ChangePasswordSuccess ? "你的密码已更改。"
-                : message == ManageMessageId.SetPasswordSuccess ? "已设置你的密码。"
-                : message == ManageMessageId.RemoveLoginSuccess ? "已删除外部登录。"
-                : "";
-            ViewBag.HasLocalPassword = OAuthWebSecurity.HasLocalAccount(WebSecurity.GetUserId(User.Identity.Name));
-            ViewBag.ReturnUrl = Url.Action("Manage");
+            Session.Remove("UserNO");
+            Session.Remove("Admin");
+            return Redirect("/Account/Signin?rel=" + Request.UrlReferrer.ToString());
+        }
+
+        public JsonResult CheckUserAccountExists(string UserNO) {
+            return Json(false, JsonRequestBehavior.AllowGet);
+        }
+
+        [LoginFilter]
+        public ActionResult ChgPass() {
+            return View(new ChgPassUser { UserNO = Session["UserNO"].ToString() });
+        }
+
+        [HttpPost]
+        public ActionResult ChgPass(ChgPassUser user) {
+            if (ModelState.IsValid) {
+                var db = l.core.MongoDBHelper.GetMongoDB();
+                var account = db.GetCollection<Account>("Account");
+                account.Update(Query.EQ("UserNO", user.UserNO),
+                    Update<Account>.Set(p => p.Password, user.Password));
+                return Redirect("/");
+            }
+            else return View(user);
+        }
+
+ 
+  
+
+        public ActionResult ToLogin() {
+            var code = Request.QueryString["code"] ?? "login";
+            ViewBag.errmsg = ErrorMsg[code];
+            ViewBag.time = code == "login" ? 0 : 10;
+            ViewBag.url = "/account/signin?rel=" + Request.QueryString["rel"];
             return View();
         }
-
-        //
-        // POST: /Account/Manage
-
-        [HttpPost]
-        [ValidateAntiForgeryToken]
-        public ActionResult Manage(LocalPasswordModel model)
-        {
-            bool hasLocalAccount = OAuthWebSecurity.HasLocalAccount(WebSecurity.GetUserId(User.Identity.Name));
-            ViewBag.HasLocalPassword = hasLocalAccount;
-            ViewBag.ReturnUrl = Url.Action("Manage");
-            if (hasLocalAccount)
-            {
-                if (ModelState.IsValid)
-                {
-                    // 在某些出错情况下，ChangePassword 将引发异常，而不是返回 false。
-                    bool changePasswordSucceeded;
-                    try
-                    {
-                        changePasswordSucceeded = WebSecurity.ChangePassword(User.Identity.Name, model.OldPassword, model.NewPassword);
-                    }
-                    catch (Exception)
-                    {
-                        changePasswordSucceeded = false;
-                    }
-
-                    if (changePasswordSucceeded)
-                    {
-                        return RedirectToAction("Manage", new { Message = ManageMessageId.ChangePasswordSuccess });
-                    }
-                    else
-                    {
-                        ModelState.AddModelError("", "当前密码不正确或新密码无效。");
-                    }
-                }
-            }
-            else
-            {
-                // 用户没有本地密码，因此将删除由于缺少
-                // OldPassword 字段而导致的所有验证错误
-                ModelState state = ModelState["OldPassword"];
-                if (state != null)
-                {
-                    state.Errors.Clear();
-                }
-
-                if (ModelState.IsValid)
-                {
-                    try
-                    {
-                        WebSecurity.CreateAccount(User.Identity.Name, model.NewPassword);
-                        return RedirectToAction("Manage", new { Message = ManageMessageId.SetPasswordSuccess });
-                    }
-                    catch (Exception e)
-                    {
-                        ModelState.AddModelError("", e);
-                    }
-                }
-            }
-
-            // 如果我们进行到这一步时某个地方出错，则重新显示表单
-            return View(model);
-        }
-
-        //
-        // POST: /Account/ExternalLogin
-
-        [HttpPost]
-        [AllowAnonymous]
-        [ValidateAntiForgeryToken]
-        public ActionResult ExternalLogin(string provider, string returnUrl)
-        {
-            return new ExternalLoginResult(provider, Url.Action("ExternalLoginCallback", new { ReturnUrl = returnUrl }));
-        }
-
-        //
-        // GET: /Account/ExternalLoginCallback
-
-        [AllowAnonymous]
-        public ActionResult ExternalLoginCallback(string returnUrl)
-        {
-            AuthenticationResult result = OAuthWebSecurity.VerifyAuthentication(Url.Action("ExternalLoginCallback", new { ReturnUrl = returnUrl }));
-            if (!result.IsSuccessful)
-            {
-                return RedirectToAction("ExternalLoginFailure");
-            }
-
-            if (OAuthWebSecurity.Login(result.Provider, result.ProviderUserId, createPersistentCookie: false))
-            {
-                return RedirectToLocal(returnUrl);
-            }
-
-            if (User.Identity.IsAuthenticated)
-            {
-                // 如果当前用户已登录，则添加新帐户
-                OAuthWebSecurity.CreateOrUpdateAccount(result.Provider, result.ProviderUserId, User.Identity.Name);
-                return RedirectToLocal(returnUrl);
-            }
-            else
-            {
-                // 该用户是新用户，因此将要求该用户提供所需的成员名称
-                string loginData = OAuthWebSecurity.SerializeProviderUserId(result.Provider, result.ProviderUserId);
-                ViewBag.ProviderDisplayName = OAuthWebSecurity.GetOAuthClientData(result.Provider).DisplayName;
-                ViewBag.ReturnUrl = returnUrl;
-                return View("ExternalLoginConfirmation", new RegisterExternalLoginModel { UserName = result.UserName, ExternalLoginData = loginData });
-            }
-        }
-
-        //
-        // POST: /Account/ExternalLoginConfirmation
-
-        [HttpPost]
-        [AllowAnonymous]
-        [ValidateAntiForgeryToken]
-        public ActionResult ExternalLoginConfirmation(RegisterExternalLoginModel model, string returnUrl)
-        {
-            string provider = null;
-            string providerUserId = null;
-
-            if (User.Identity.IsAuthenticated || !OAuthWebSecurity.TryDeserializeProviderUserId(model.ExternalLoginData, out provider, out providerUserId))
-            {
-                return RedirectToAction("Manage");
-            }
-
-            if (ModelState.IsValid)
-            {
-                // 将新用户插入到数据库
-                using (UsersContext db = new UsersContext())
-                {
-                    UserProfile user = db.UserProfiles.FirstOrDefault(u => u.UserName.ToLower() == model.UserName.ToLower());
-                    // 检查用户是否已存在
-                    if (user == null)
-                    {
-                        // 将名称插入到配置文件表
-                        db.UserProfiles.Add(new UserProfile { UserName = model.UserName });
-                        db.SaveChanges();
-
-                        InitiateDatabaseForNewUser(model.UserName);
-
-                        OAuthWebSecurity.CreateOrUpdateAccount(provider, providerUserId, model.UserName);
-                        OAuthWebSecurity.Login(provider, providerUserId, createPersistentCookie: false);
-
-                        return RedirectToLocal(returnUrl);
-                    }
-                    else
-                    {
-                        ModelState.AddModelError("UserName", "用户名已存在。请输入其他用户名。");
-                    }
-                }
-            }
-
-            ViewBag.ProviderDisplayName = OAuthWebSecurity.GetOAuthClientData(provider).DisplayName;
-            ViewBag.ReturnUrl = returnUrl;
-            return View(model);
-        }
-
-        //
-        // GET: /Account/ExternalLoginFailure
-
-        [AllowAnonymous]
-        public ActionResult ExternalLoginFailure()
-        {
-            return View();
-        }
-
-        [AllowAnonymous]
-        [ChildActionOnly]
-        public ActionResult ExternalLoginsList(string returnUrl)
-        {
-            ViewBag.ReturnUrl = returnUrl;
-            return PartialView("_ExternalLoginsListPartial", OAuthWebSecurity.RegisteredClientData);
-        }
-
-        [ChildActionOnly]
-        public ActionResult RemoveExternalLogins()
-        {
-            ICollection<OAuthAccount> accounts = OAuthWebSecurity.GetAccountsFromUserName(User.Identity.Name);
-            List<ExternalLogin> externalLogins = new List<ExternalLogin>();
-            foreach (OAuthAccount account in accounts)
-            {
-                AuthenticationClientData clientData = OAuthWebSecurity.GetOAuthClientData(account.Provider);
-
-                externalLogins.Add(new ExternalLogin
-                {
-                    Provider = account.Provider,
-                    ProviderDisplayName = clientData.DisplayName,
-                    ProviderUserId = account.ProviderUserId,
-                });
-            }
-
-            ViewBag.ShowRemoveButton = externalLogins.Count > 1 || OAuthWebSecurity.HasLocalAccount(WebSecurity.GetUserId(User.Identity.Name));
-            return PartialView("_RemoveExternalLoginsPartial", externalLogins);
-        }
-
-        #region 帮助程序
-        private ActionResult RedirectToLocal(string returnUrl)
-        {
-            if (Url.IsLocalUrl(returnUrl))
-            {
-                return Redirect(returnUrl);
-            }
-            else
-            {
-                return RedirectToAction("Index", "Home");
-            }
-        }
-
-        public enum ManageMessageId
-        {
-            ChangePasswordSuccess,
-            SetPasswordSuccess,
-            RemoveLoginSuccess,
-        }
-
-        internal class ExternalLoginResult : ActionResult
-        {
-            public ExternalLoginResult(string provider, string returnUrl)
-            {
-                Provider = provider;
-                ReturnUrl = returnUrl;
-            }
-
-            public string Provider { get; private set; }
-            public string ReturnUrl { get; private set; }
-
-            public override void ExecuteResult(ControllerContext context)
-            {
-                OAuthWebSecurity.RequestAuthentication(Provider, ReturnUrl);
-            }
-        }
-
-        private IEnumerable<string> GetErrorsFromModelState()
-        {
-            return ModelState.SelectMany(x => x.Value.Errors.Select(error => error.ErrorMessage));
-        }
-
-        private static string ErrorCodeToString(MembershipCreateStatus createStatus)
-        {
-            // 请参见 http://go.microsoft.com/fwlink/?LinkID=177550 以查看
-            // 状态代码的完整列表。
-            switch (createStatus)
-            {
-                case MembershipCreateStatus.DuplicateUserName:
-                    return "用户名已存在。请输入其他用户名。";
-
-                case MembershipCreateStatus.DuplicateEmail:
-                    return "该电子邮件地址的用户名已存在。请输入其他电子邮件地址。";
-
-                case MembershipCreateStatus.InvalidPassword:
-                    return "提供的密码无效。请输入有效的密码值。";
-
-                case MembershipCreateStatus.InvalidEmail:
-                    return "提供的电子邮件地址无效。请检查该值并重试。";
-
-                case MembershipCreateStatus.InvalidAnswer:
-                    return "提供的密码取回答案无效。请检查该值并重试。";
-
-                case MembershipCreateStatus.InvalidQuestion:
-                    return "提供的密码取回问题无效。请检查该值并重试。";
-
-                case MembershipCreateStatus.InvalidUserName:
-                    return "提供的用户名无效。请检查该值并重试。";
-
-                case MembershipCreateStatus.ProviderError:
-                    return "身份验证提供程序返回了错误。请验证您的输入并重试。如果问题仍然存在，请与系统管理员联系。";
-
-                case MembershipCreateStatus.UserRejected:
-                    return "已取消用户创建请求。请验证您的输入并重试。如果问题仍然存在，请与系统管理员联系。";
-
-                default:
-                    return "发生未知错误。请验证您的输入并重试。如果问题仍然存在，请与系统管理员联系。";
-            }
-        }
-        #endregion
     }
 }

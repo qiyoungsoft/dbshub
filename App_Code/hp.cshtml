@@ -1,0 +1,156 @@
+﻿@using System.Web.Mvc.Html
+@using System.Web.Mvc
+@using MongoDB.Bson
+
+
+@helper SectionHeader(string text, string linkText, string url, string controller, string action, string cmd, MongoDB.Bson.BsonDocument doc, l.core.FieldMetaHelper fieldsMeta)
+    {
+        var statusField = fieldsMeta.StatusField;
+    <div class="section-header SectionHeader">
+        <div class="title">
+            <img alt="" src="/Content/images/icon/ico-dbshub.IconHelper.GetIcon(text)).png">
+            @text  <a href="@url">(@(linkText ?? "返回"))</a>
+        </div>
+        <div class="options cmd">
+            @foreach (char c in cmd ?? "")
+            {
+                if (c == 'C')
+                {<a class="t-button newDoc " href="/@controller/@action" >新增</a> }
+                if (c == 'D')
+                {<a class="t-button delDoc" action="/@controller/del" href="@url" confirm="确认要删除吗?">删除</a>  }
+                if (c == 'U')
+                {<a class="t-button saveDoc" action="/@controller/@action" >保存</a>  }
+            }
+            <a class="t-button editDoc" >修改</a> <a class="t-button cancelDoc" >取消</a> 
+            @if (statusField != null){
+                int j = Convert.ToInt32(doc[statusField.FieldName]) + 1;
+                if (statusField.DropDownList.ContainsKey(j.ToString())) {
+                    <a class="check t-button" action="/@(controller)/check/@(doc["_id"])?@(statusField.FieldName)=@j">@statusField.DropDownList[j.ToString()]</a>
+                }
+            }
+        </div>
+    </div>
+}
+ 
+
+@helper pagelink(object text, int page, string Class, string type = null){
+    var uh = new l.core.web.Helper.UrlHelper(Request);
+    <a class="t-link @Class" href="@uh.SetQueryString("page", page)">
+        @if(type == null) {@text}
+        else 
+        {<span class="t-icon t-arrow-@type"></span>}
+    </a>
+}
+            
+@helper Table(string name, 
+        IEnumerable<MongoDB.Bson.BsonDocument> docs, 
+        dbshub.Models.TableSchema schema,
+        bool editable,
+        string href,  //跳转
+        ViewContext context =null,
+        int pageRecordCount = 0,  //每页行数
+        IEnumerable<string> keyFields = null,  //主键字段
+        string prefix = null, //编辑框前缀
+        Dictionary<string, object> footer = null //页脚信息
+    )
+    {
+        int page = Request.QueryString["page"] != null ? Convert.ToInt32(Request.QueryString["page"]) : 1;
+        if (page == 0) { page = Convert.ToInt32(context.ViewData["__page"]); }
+        var table = name.Replace("_", ".");
+        int c = -2;
+    <div id="@name" table="@table" class="t-widget t-grid Grid"  @(keyFields != null ? "keyFields=" + string.Join(";", keyFields) : "") sel="single">
+        <div class="t-grid-header" style="padding-right: 17px;">
+            <div class="t-grid-header-wrap">  
+                <table cellspacing="0" style="width:100%">
+                    <colgroup>
+                        @foreach (var f in schema.Fields){<col  /> }
+                        <col />
+                    </colgroup>
+                    <thead>
+                        <tr>
+                            @foreach (var f in schema.Fields) { 
+                                <th scope="col" class="t-header" >@(f.Caption) </th> 
+                            }
+                            <th scope="col" class="t-header"></th>
+                            </tr>
+                    </thead>
+                </table>
+                <div class="t-resize-handle" style="left: 98px; top: 0px; width: 6px;"></div>
+            </div>
+        </div>
+        <div style="min-height:100px" class="t-grid-content">
+            <table cellspacing="0" style="width:100%"> 
+                <thead><tr></tr></thead> @*一定要加不然造成 rowIndex 差异/*@
+                <tbody>
+                @foreach (var r in new[] { new MongoDB.Bson.BsonDocument() }.Union(docs)) {
+                    c++;
+                    var tmpl = c == -1; int d = 0;
+                    <tr class = "@(tmpl ? "tmpl" : "") @(c % 2 == 0 ? "odd" : "")">
+                    @foreach (var f in schema.Fields) {
+                        var _name = string.Format("{0}[{1}].{2}", prefix ?? name, c, f.Name);
+                        <td fn="@f.Name" >
+                            <input fn="@f.Name" name="@_name" class="editor" />
+                        </td>
+                        d++;
+                    }<td> @if (href != null)
+                          {<a href="@href/@(tmpl ? "" : r["_id"].ToString())">详情</a>}
+                     </td></tr>
+                }
+                </tbody>
+                 
+            </table>
+        </div>
+        <div class="t-grid-pager t-grid-bottom">
+            <div class="t-status"><a href="#" class="t-icon t-refresh">Refresh</a></div>
+            <div class="t-pager t-reset">
+                @if (pageRecordCount > 0) {
+                    @pagelink(1, 1, page == 1 ? "t-state-disabled" : "", "first")
+                    @pagelink(page -1, page -1, page == 1 ? "t-state-disabled" : "", "prev")
+                    <div class="t-numeric">
+                        @for (int i = Math.Max(page - 10, 1); i < page; i++){
+                            @pagelink(i, i, null)
+                        }
+                        <span class="t-state-active">@page</span>
+                        @if (docs.Count() == 15){
+                            @pagelink(page + 1, page + 1, null)
+                        }
+                    </div>
+                    @pagelink(page +1, page +1, docs.Count() < 15 ? "t-state-disabled" : "", "next")
+                    @pagelink(0, 0, "", "last")
+                    var uh = new l.core.web.Helper.UrlHelper(Request);
+                    <label>转到第</label><input class="pageNumber" url="@uh.SetQueryString("page", page)" rep="page=@page" /><label>页</label>
+                }
+            </div>
+            <div class="t-status-text">显示记录 @((page - 1) * 15 + 1) - @(page * 15) </div></div>
+    </div>
+}
+ 
+ 
+
+@helper BsonEditor(string fieldName, MongoDB.Bson.BsonValue value, l.core.FieldMeta fm, bool _readonly, string name = null)
+    {
+        var attr = new Dictionary<string, object>() { };
+        if (_readonly) { attr["style"] = "display:none"; }
+        var _class = "Editor";
+        var attrStr = string.Join(" ", attr.Select(p => p.Key + "=" + p.Value));
+
+        if (fm.EditorType.ToUpper().Equals("NUMBER"))
+        { @NumberEditor(fieldName, value, fm, attrStr, _class, name) }
+        else if (fm.EditorType.ToUpper().Equals("DATETIME"))
+        { @DateTimeEditor(fieldName, value, fm, attrStr, _class, name) }
+        else
+        {<input @attrStr class="@_class" value="@(value == BsonNull.Value ? "" : value)" fn="@fieldName" name="@(name ?? fieldName)"/>}
+}
+
+@helper DateTimeEditor(string fieldName, object value, l.core.FieldMeta fm, string attrStr, string _class, string name = null)
+    {
+    <input @attrStr class="@_class DateTime" value="@(fm.Render(value))" fn="@fieldName" name="@(name ?? fieldName)"/>
+}
+
+@helper NumberEditor(string fieldName, MongoDB.Bson.BsonValue value, l.core.FieldMeta fm, string attrStr, string _class, string name = null)
+    {
+    <div fn="@fieldName" @attrStr class="t-widget t-numerictextbox @_class" precision="@(fm.Number != null ? fm.Number.Precision.ToString() : "0")" @(fm.Number != null && fm.Number.Money ? "money=1" : "")>
+        <div class="t-formatted-value" style="  text-transform: none; display: block;">@(fm.Number != null && fm.Number.Money ? "￥" : "")@string.Format("{0:N" + (fm.Number != null ? fm.Number.Precision.ToString() : "0") + "}", value)</div>
+        <input type="text" value="@value" fn="@fieldName" name="@(name ?? fieldName)" class="t-input valid"   /><a title="Increase value" tabindex="-1" href="#" class="t-link t-icon t-arrow-up">Increment</a><a title="Decrease value" tabindex="-1" href="#" class="t-link t-icon t-arrow-down">Decrement</a>
+    </div>
+}

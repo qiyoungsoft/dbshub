@@ -6,12 +6,13 @@ using System.Web.Mvc;
 
 namespace dbshub.Controllers
 {
+    [LoginFilter]
     public class HomeController : Controller
     {
-        public ActionResult Index(string returnUrl)
+        public ActionResult Index()
         {
-            ViewBag.ReturnUrl = returnUrl;
             return View();
         }
+
     }
 }

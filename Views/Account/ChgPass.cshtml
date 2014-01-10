@@ -1,0 +1,26 @@
+﻿@model dbshub.Controllers.ChgPassUser
+@{
+    ViewBag.Title = "更改密码";
+}
+
+<h2>修改密码</h2>
+@Html.ValidationSummary(false)
+<form method="post">
+    <fieldset style="padding:10px;  display:inline-block">
+        @Html.HiddenFor(p=>p.UserNO)
+        <table>
+            <tr><td>旧密码</td><td>@Html.PasswordFor(p=>p.OldPass)</td></tr>
+            <tr><td>新密码</td><td>@Html.PasswordFor(p=>p.NewPass)</td></tr>
+            <tr><td>再次输入新密码</td><td>@Html.PasswordFor(p=>p.NewPass1)</td></tr>
+
+            <tr><td> </td></tr>
+            <tr><td ></td><td><input type="submit" value="提交" /></td></tr>
+        </table>
+
+    </fieldset>
+</form>
+
+<script>
+    $(":submit").button();
+
+</script>
